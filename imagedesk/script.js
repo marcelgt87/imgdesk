@@ -32,6 +32,11 @@ class ImageDesk {
         this.panningRAF = false;
         this.wheelRAF = false;
         
+        // Clustering state
+        this.clusters = new Map(); // Map of cluster IDs to cluster data
+        this.clusteredImages = new Set(); // Images that are part of a cluster
+        this.nextClusterId = 1;
+        
         this.initializeEventListeners();
         this.updateTransform();
         this.createOverlay();
@@ -139,7 +144,9 @@ class ImageDesk {
                         element: imageItem,
                         zIndex: imageItem.style.zIndex,
                         isFavorite: false,
-                        hash: null // Will be populated later
+                        hash: null, // Will be populated later
+                        clusterId: null, // Cluster ID if this image is part of a cluster
+                        isClusterRepresentative: false // Whether this image represents a cluster
                     };
                     
                     this.canvas.appendChild(imageItem);
@@ -399,6 +406,10 @@ class ImageDesk {
         } else if (e.key === 'r' && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
             this.clearAllImages();
+        } else if (e.key === 'c' || e.key === 'C') {
+            if (this.selectedImages.size > 1) {
+                this.showClusterModal();
+            }
         }
     }
     
@@ -573,6 +584,8 @@ class ImageDesk {
         this.selectedImages.clear();
         this.favoriteImages.clear();
         this.imageHashes.clear();
+        this.clusters.clear();
+        this.clusteredImages.clear();
         this.updateImageCount();
     }
     
@@ -1104,6 +1117,345 @@ class ImageDesk {
         console.log(`Found ${similarImages.length} similar images for ${targetImage.imageData.file.name}:`,
                    similarImages.map(s => `${s.image.imageData.file.name} (${s.similarity.toFixed(2)})`));
     }
+    
+    // Clustering Methods
+    
+    showClusterModal() {
+        // Create modal overlay
+        const modalOverlay = document.createElement('div');
+        modalOverlay.className = 'cluster-modal-overlay';
+        
+        const modal = document.createElement('div');
+        modal.className = 'cluster-modal';
+        
+        // Modal header
+        const header = document.createElement('div');
+        header.className = 'cluster-modal-header';
+        header.innerHTML = '<h3>Create Cluster</h3><p>Select which image should represent this cluster:</p>';
+        
+        // Images grid
+        const imagesGrid = document.createElement('div');
+        imagesGrid.className = 'cluster-images-grid';
+        
+        // Add each selected image as an option
+        let selectedRepresentative = null;
+        this.selectedImages.forEach((imageItem, index) => {
+            const imageOption = document.createElement('div');
+            imageOption.className = 'cluster-image-option';
+            
+            const img = document.createElement('img');
+            img.src = imageItem.querySelector('img').src;
+            img.alt = imageItem.imageData.file.name;
+            
+            const filename = document.createElement('div');
+            filename.className = 'cluster-image-filename';
+            filename.textContent = imageItem.imageData.file.name;
+            
+            imageOption.appendChild(img);
+            imageOption.appendChild(filename);
+            
+            // Make first image selected by default
+            if (index === 0) {
+                imageOption.classList.add('selected');
+                selectedRepresentative = imageItem;
+            }
+            
+            imageOption.addEventListener('click', () => {
+                // Remove selection from all options
+                imagesGrid.querySelectorAll('.cluster-image-option').forEach(option => {
+                    option.classList.remove('selected');
+                });
+                // Select this option
+                imageOption.classList.add('selected');
+                selectedRepresentative = imageItem;
+            });
+            
+            imagesGrid.appendChild(imageOption);
+        });
+        
+        // Modal buttons
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.className = 'cluster-modal-buttons';
+        
+        const createButton = document.createElement('button');
+        createButton.className = 'cluster-create-btn';
+        createButton.textContent = 'Create Cluster';
+        createButton.addEventListener('click', () => {
+            if (selectedRepresentative) {
+                this.createCluster(Array.from(this.selectedImages), selectedRepresentative);
+                document.body.removeChild(modalOverlay);
+            }
+        });
+        
+        const cancelButton = document.createElement('button');
+        cancelButton.className = 'cluster-cancel-btn';
+        cancelButton.textContent = 'Cancel';
+        cancelButton.addEventListener('click', () => {
+            document.body.removeChild(modalOverlay);
+        });
+        
+        buttonsContainer.appendChild(createButton);
+        buttonsContainer.appendChild(cancelButton);
+        
+        // Assemble modal
+        modal.appendChild(header);
+        modal.appendChild(imagesGrid);
+        modal.appendChild(buttonsContainer);
+        modalOverlay.appendChild(modal);
+        
+        // Close on overlay click
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) {
+                document.body.removeChild(modalOverlay);
+            }
+        });
+        
+        // Close on Escape key
+        const escapeHandler = (e) => {
+            if (e.key === 'Escape') {
+                document.removeEventListener('keydown', escapeHandler);
+                if (document.body.contains(modalOverlay)) {
+                    document.body.removeChild(modalOverlay);
+                }
+            }
+        };
+        document.addEventListener('keydown', escapeHandler);
+        
+        document.body.appendChild(modalOverlay);
+    }
+    
+    createCluster(images, representative) {
+        const clusterId = `cluster-${this.nextClusterId++}`;
+        
+        // Create cluster data
+        const clusterData = {
+            id: clusterId,
+            images: [...images],
+            representative: representative,
+            hidden: images.filter(img => img !== representative)
+        };
+        
+        // Store cluster
+        this.clusters.set(clusterId, clusterData);
+        
+        // Update image data
+        images.forEach(imageItem => {
+            imageItem.imageData.clusterId = clusterId;
+            this.clusteredImages.add(imageItem);
+            
+            if (imageItem === representative) {
+                imageItem.imageData.isClusterRepresentative = true;
+                imageItem.classList.add('cluster-representative');
+                // Add cluster indicator
+                this.addClusterIndicator(imageItem, clusterData);
+            } else {
+                // Hide non-representative images
+                imageItem.style.display = 'none';
+            }
+        });
+        
+        // Clear selection
+        this.clearSelection();
+        
+        console.log(`Created cluster ${clusterId} with ${images.length} images, representative: ${representative.imageData.file.name}`);
+    }
+    
+    addClusterIndicator(imageItem, clusterData) {
+        // Remove existing indicator if any
+        const existingIndicator = imageItem.querySelector('.cluster-indicator');
+        if (existingIndicator) {
+            existingIndicator.remove();
+        }
+        
+        const indicator = document.createElement('div');
+        indicator.className = 'cluster-indicator';
+        indicator.innerHTML = `<span class="cluster-count">${clusterData.images.length}</span>`;
+        indicator.title = `Cluster with ${clusterData.images.length} images. Click to manage cluster.`;
+        
+        // Add click handler to open cluster
+        indicator.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.showClusterManagement(clusterData.id);
+        });
+        
+        imageItem.appendChild(indicator);
+    }
+    
+    showClusterManagement(clusterId) {
+        const clusterData = this.clusters.get(clusterId);
+        if (!clusterData) return;
+        
+        // Create management modal
+        const modalOverlay = document.createElement('div');
+        modalOverlay.className = 'cluster-modal-overlay';
+        
+        const modal = document.createElement('div');
+        modal.className = 'cluster-modal cluster-management-modal';
+        
+        // Modal header
+        const header = document.createElement('div');
+        header.className = 'cluster-modal-header';
+        header.innerHTML = `
+            <h3>Manage Cluster</h3>
+            <p>${clusterData.images.length} images in this cluster</p>
+        `;
+        
+        // Images grid
+        const imagesGrid = document.createElement('div');
+        imagesGrid.className = 'cluster-images-grid';
+        
+        let selectedRepresentative = clusterData.representative;
+        
+        clusterData.images.forEach((imageItem) => {
+            const imageOption = document.createElement('div');
+            imageOption.className = 'cluster-image-option';
+            
+            if (imageItem === clusterData.representative) {
+                imageOption.classList.add('selected');
+                imageOption.classList.add('current-representative');
+            }
+            
+            const img = document.createElement('img');
+            img.src = imageItem.querySelector('img').src;
+            img.alt = imageItem.imageData.file.name;
+            
+            const filename = document.createElement('div');
+            filename.className = 'cluster-image-filename';
+            filename.textContent = imageItem.imageData.file.name;
+            
+            if (imageItem === clusterData.representative) {
+                const badge = document.createElement('div');
+                badge.className = 'representative-badge';
+                badge.textContent = 'Current Representative';
+                imageOption.appendChild(badge);
+            }
+            
+            imageOption.appendChild(img);
+            imageOption.appendChild(filename);
+            
+            imageOption.addEventListener('click', () => {
+                // Remove selection from all options
+                imagesGrid.querySelectorAll('.cluster-image-option').forEach(option => {
+                    option.classList.remove('selected');
+                });
+                // Select this option
+                imageOption.classList.add('selected');
+                selectedRepresentative = imageItem;
+            });
+            
+            imagesGrid.appendChild(imageOption);
+        });
+        
+        // Modal buttons
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.className = 'cluster-modal-buttons';
+        
+        const updateButton = document.createElement('button');
+        updateButton.className = 'cluster-update-btn';
+        updateButton.textContent = 'Update Representative';
+        updateButton.addEventListener('click', () => {
+            if (selectedRepresentative && selectedRepresentative !== clusterData.representative) {
+                this.updateClusterRepresentative(clusterId, selectedRepresentative);
+            }
+            document.body.removeChild(modalOverlay);
+        });
+        
+        const discardButton = document.createElement('button');
+        discardButton.className = 'cluster-discard-btn';
+        discardButton.textContent = 'Discard Cluster';
+        discardButton.addEventListener('click', () => {
+            this.discardCluster(clusterId);
+            document.body.removeChild(modalOverlay);
+        });
+        
+        const cancelButton = document.createElement('button');
+        cancelButton.className = 'cluster-cancel-btn';
+        cancelButton.textContent = 'Cancel';
+        cancelButton.addEventListener('click', () => {
+            document.body.removeChild(modalOverlay);
+        });
+        
+        buttonsContainer.appendChild(updateButton);
+        buttonsContainer.appendChild(discardButton);
+        buttonsContainer.appendChild(cancelButton);
+        
+        // Assemble modal
+        modal.appendChild(header);
+        modal.appendChild(imagesGrid);
+        modal.appendChild(buttonsContainer);
+        modalOverlay.appendChild(modal);
+        
+        // Close on overlay click
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) {
+                document.body.removeChild(modalOverlay);
+            }
+        });
+        
+        // Close on Escape key
+        const escapeHandler = (e) => {
+            if (e.key === 'Escape') {
+                document.removeEventListener('keydown', escapeHandler);
+                if (document.body.contains(modalOverlay)) {
+                    document.body.removeChild(modalOverlay);
+                }
+            }
+        };
+        document.addEventListener('keydown', escapeHandler);
+        
+        document.body.appendChild(modalOverlay);
+    }
+    
+    updateClusterRepresentative(clusterId, newRepresentative) {
+        const clusterData = this.clusters.get(clusterId);
+        if (!clusterData || !clusterData.images.includes(newRepresentative)) return;
+        
+        const oldRepresentative = clusterData.representative;
+        
+        // Update cluster data
+        clusterData.representative = newRepresentative;
+        clusterData.hidden = clusterData.images.filter(img => img !== newRepresentative);
+        
+        // Update old representative
+        oldRepresentative.imageData.isClusterRepresentative = false;
+        oldRepresentative.classList.remove('cluster-representative');
+        oldRepresentative.style.display = 'none';
+        const oldIndicator = oldRepresentative.querySelector('.cluster-indicator');
+        if (oldIndicator) oldIndicator.remove();
+        
+        // Update new representative
+        newRepresentative.imageData.isClusterRepresentative = true;
+        newRepresentative.classList.add('cluster-representative');
+        newRepresentative.style.display = '';
+        this.addClusterIndicator(newRepresentative, clusterData);
+        
+        console.log(`Updated cluster ${clusterId} representative from ${oldRepresentative.imageData.file.name} to ${newRepresentative.imageData.file.name}`);
+    }
+    
+    discardCluster(clusterId) {
+        const clusterData = this.clusters.get(clusterId);
+        if (!clusterData) return;
+        
+        // Show all images in the cluster
+        clusterData.images.forEach(imageItem => {
+            imageItem.imageData.clusterId = null;
+            imageItem.imageData.isClusterRepresentative = false;
+            imageItem.classList.remove('cluster-representative');
+            imageItem.style.display = '';
+            this.clusteredImages.delete(imageItem);
+            
+            // Remove cluster indicator
+            const indicator = imageItem.querySelector('.cluster-indicator');
+            if (indicator) indicator.remove();
+        });
+        
+        // Remove cluster from storage
+        this.clusters.delete(clusterId);
+        
+        console.log(`Discarded cluster ${clusterId}`);
+    }
+    
+
 }
 
 // Initialize the application when the page loads
