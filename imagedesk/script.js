@@ -25,6 +25,8 @@ class ImageDesk {
         this.lastMousePos = { x: 0, y: 0 };
         this.nextZIndex = 1;
         this.baseZIndex = 1;
+        this.panningRAF = false;
+        this.wheelRAF = false;
         
         this.initializeEventListeners();
         this.updateTransform();
@@ -44,8 +46,12 @@ class ImageDesk {
         this.desk.addEventListener('mouseup', (e) => this.handleMouseUp(e));
         this.desk.addEventListener('wheel', (e) => this.handleWheel(e));
         
-        // Context menu prevention
-        this.desk.addEventListener('contextmenu', (e) => e.preventDefault());
+        // Context menu prevention (only prevent on desk, allow on images for favorites)
+        this.desk.addEventListener('contextmenu', (e) => {
+            if (e.target === this.desk) {
+                e.preventDefault();
+            }
+        });
         
         // Keyboard events
         document.addEventListener('keydown', (e) => this.handleKeyDown(e));
@@ -205,9 +211,10 @@ class ImageDesk {
     handleMouseDown(e) {
         this.lastMousePos = { x: e.clientX, y: e.clientY };
         
-        if (e.button === 2) { // Right click - start panning
+        if (e.button === 1) { // Middle mouse button - start panning
             this.isPanning = true;
             this.desk.classList.add('panning');
+            e.preventDefault();
         } else if (e.button === 0 && e.target === this.desk) {
             // Left click on empty area - start selection
             this.clearSelection();
@@ -227,7 +234,15 @@ class ImageDesk {
         if (this.isPanning) {
             this.panX += deltaX;
             this.panY += deltaY;
-            this.updateTransform();
+            
+            // Use requestAnimationFrame for smoother panning
+            if (!this.panningRAF) {
+                this.panningRAF = true;
+                requestAnimationFrame(() => {
+                    this.updateTransform();
+                    this.panningRAF = false;
+                });
+            }
         } else if (this.isDragging && this.selectedImages.size > 0) {
             // Provide visual feedback during dragging
             this.dragSelectedImages(deltaX / this.scale, deltaY / this.scale);
@@ -260,21 +275,47 @@ class ImageDesk {
     handleWheel(e) {
         e.preventDefault();
         
-        const rect = this.desk.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-        
-        const zoom = e.deltaY > 0 ? 0.9 : 1.1;
-        const newScale = Math.max(0.1, Math.min(5, this.scale * zoom));
-        
-        if (newScale !== this.scale) {
-            // Zoom towards mouse position
-            const scaleRatio = newScale / this.scale;
-            this.panX = mouseX - (mouseX - this.panX) * scaleRatio;
-            this.panY = mouseY - (mouseY - this.panY) * scaleRatio;
-            this.scale = newScale;
+        if (e.shiftKey) {
+            // Pan when Shift is held
+            const panSpeed = 2; // Increase for faster panning
             
-            this.updateTransform();
+            // Handle both vertical and horizontal wheel movement
+            if (e.deltaX !== 0) {
+                // Horizontal wheel movement (trackpad sideways scroll)
+                this.panX -= e.deltaX * panSpeed;
+            }
+            
+            if (e.deltaY !== 0) {
+                // Vertical panning with Shift + wheel
+                this.panY -= e.deltaY * panSpeed;
+            }
+            
+            // Use requestAnimationFrame for smoother updates
+            if (!this.wheelRAF) {
+                this.wheelRAF = true;
+                requestAnimationFrame(() => {
+                    this.updateTransform();
+                    this.wheelRAF = false;
+                });
+            }
+        } else {
+            // Zoom by default (without any modifier keys)
+            const rect = this.desk.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            const zoom = e.deltaY > 0 ? 0.9 : 1.1;
+            const newScale = Math.max(0.1, Math.min(5, this.scale * zoom));
+            
+            if (newScale !== this.scale) {
+                // Zoom towards mouse position
+                const scaleRatio = newScale / this.scale;
+                this.panX = mouseX - (mouseX - this.panX) * scaleRatio;
+                this.panY = mouseY - (mouseY - this.panY) * scaleRatio;
+                this.scale = newScale;
+                
+                this.updateTransform();
+            }
         }
     }
     
@@ -447,7 +488,8 @@ class ImageDesk {
     }
     
     updateTransform() {
-        this.canvas.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.scale})`;
+        // Use transform3d for better performance
+        this.canvas.style.transform = `translate3d(${this.panX}px, ${this.panY}px, 0) scale(${this.scale})`;
     }
     
     updateImageCount() {

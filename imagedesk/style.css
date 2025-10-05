@@ -125,7 +125,8 @@ body {
     width: 100%;
     height: 100%;
     transform-origin: 0 0;
-    transition: transform 0.1s ease-out;
+    /* Removed transition for more responsive panning and zooming */
+    will-change: transform; /* Optimize for transform changes */
 }
 
 .image-item {
