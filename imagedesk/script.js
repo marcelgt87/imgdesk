@@ -655,10 +655,33 @@ class ImageDesk {
             this.favoriteImages.delete(imageItem);
             imageItem.classList.remove('favorite');
             imageItem.imageData.isFavorite = false;
+            // Remove star overlay
+            this.removeFavoriteStar(imageItem);
         } else {
             this.favoriteImages.add(imageItem);
             imageItem.classList.add('favorite');
             imageItem.imageData.isFavorite = true;
+            // Add star overlay
+            this.addFavoriteStar(imageItem);
+        }
+    }
+    
+    addFavoriteStar(imageItem) {
+        // Remove existing star if any
+        this.removeFavoriteStar(imageItem);
+        
+        const star = document.createElement('div');
+        star.className = 'favorite-star';
+        star.innerHTML = '★';
+        star.title = 'Favorite image';
+        
+        imageItem.appendChild(star);
+    }
+    
+    removeFavoriteStar(imageItem) {
+        const existingStar = imageItem.querySelector('.favorite-star');
+        if (existingStar) {
+            existingStar.remove();
         }
     }
     
