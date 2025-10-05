@@ -134,41 +134,63 @@ class ImageDesk {
     }
     
     addImageEventListeners(imageItem) {
-        let clickCount = 0;
-        let clickTimer = null;
+        let clickStartTime = 0;
+        let dragStarted = false;
+        let mouseMoved = false;
         
         imageItem.addEventListener('mousedown', (e) => {
             e.stopPropagation();
             
             if (e.button === 0) { // Left click
+                clickStartTime = Date.now();
+                dragStarted = false;
+                mouseMoved = false;
+                
                 // Bring image to front when clicked
                 this.bringToFront(imageItem);
                 
-                clickCount++;
-                
-                if (clickCount === 1) {
-                    clickTimer = setTimeout(() => {
-                        // Single click logic
-                        if (!e.ctrlKey && !e.metaKey) {
-                            if (!this.selectedImages.has(imageItem)) {
-                                this.clearSelection();
-                                this.selectImage(imageItem);
-                                // Highlight similar images
-                                this.highlightSimilarImages(imageItem);
-                            }
-                        } else {
-                            this.toggleImageSelection(imageItem);
-                        }
-                        
-                        this.startDragging(e, imageItem);
-                        clickCount = 0;
-                    }, 250);
-                } else if (clickCount === 2) {
-                    // Double click logic
-                    clearTimeout(clickTimer);
-                    this.showFullscreen(imageItem);
-                    clickCount = 0;
+                // Select the image if not already selected (unless ctrl/cmd is held)
+                if (!e.ctrlKey && !e.metaKey) {
+                    if (!this.selectedImages.has(imageItem)) {
+                        this.clearSelection();
+                        this.selectImage(imageItem);
+                        // Highlight similar images
+                        this.highlightSimilarImages(imageItem);
+                    }
+                } else {
+                    this.toggleImageSelection(imageItem);
                 }
+                
+                // Start dragging immediately
+                this.startDragging(e, imageItem);
+                dragStarted = true;
+            }
+        });
+        
+        // Track mouse movement to distinguish between click and drag
+        imageItem.addEventListener('mousemove', (e) => {
+            if (dragStarted) {
+                mouseMoved = true;
+            }
+        });
+        
+        imageItem.addEventListener('mouseup', (e) => {
+            if (e.button === 0) {
+                const clickDuration = Date.now() - clickStartTime;
+                
+                // Handle double-click for fullscreen (only if no dragging occurred)
+                if (!mouseMoved && clickDuration < 300) {
+                    // Check for double-click
+                    if (imageItem._lastClickTime && (clickStartTime - imageItem._lastClickTime) < 400) {
+                        this.showFullscreen(imageItem);
+                        imageItem._lastClickTime = 0; // Reset to prevent triple-click issues
+                    } else {
+                        imageItem._lastClickTime = clickStartTime;
+                    }
+                }
+                
+                dragStarted = false;
+                mouseMoved = false;
             }
         });
         
@@ -191,6 +213,11 @@ class ImageDesk {
             this.clearSelection();
             this.startSelection(e);
         }
+        
+        // Prevent default behavior that might interfere with dragging
+        if (e.button === 0) {
+            e.preventDefault();
+        }
     }
     
     handleMouseMove(e) {
@@ -202,7 +229,9 @@ class ImageDesk {
             this.panY += deltaY;
             this.updateTransform();
         } else if (this.isDragging && this.selectedImages.size > 0) {
+            // Provide visual feedback during dragging
             this.dragSelectedImages(deltaX / this.scale, deltaY / this.scale);
+            this.desk.style.cursor = 'grabbing';
         } else if (this.isSelecting) {
             this.updateSelection(e);
         }
@@ -223,6 +252,9 @@ class ImageDesk {
         if (this.isSelecting) {
             this.finishSelection();
         }
+        
+        // Reset cursor
+        this.desk.style.cursor = 'grab';
     }
     
     handleWheel(e) {
@@ -264,19 +296,36 @@ class ImageDesk {
         this.isDragging = true;
         this.dragStartPos = { x: e.clientX, y: e.clientY };
         
+        // Ensure the clicked image is selected if not already
+        if (!this.selectedImages.has(imageItem)) {
+            this.clearSelection();
+            this.selectImage(imageItem);
+        }
+        
         // Bring all selected images to front when dragging starts
         this.selectedImages.forEach(img => {
             img.classList.add('dragging');
             img.style.zIndex = this.nextZIndex++;
             img.imageData.zIndex = img.style.zIndex;
         });
+        
+        // Change cursor to indicate dragging
+        this.desk.style.cursor = 'grabbing';
+        
+        // Prevent default to avoid text selection or other interference
+        e.preventDefault();
     }
     
     stopDragging() {
         this.isDragging = false;
         this.selectedImages.forEach(img => {
             img.classList.remove('dragging');
+            // Restore transitions after dragging
+            img.style.transition = '';
         });
+        
+        // Reset cursor
+        this.desk.style.cursor = 'grab';
     }
     
     dragSelectedImages(deltaX, deltaY) {
@@ -285,6 +334,9 @@ class ImageDesk {
             imageItem.imageData.y += deltaY;
             imageItem.style.left = imageItem.imageData.x + 'px';
             imageItem.style.top = imageItem.imageData.y + 'px';
+            
+            // Temporarily disable transitions during dragging for smoother movement
+            imageItem.style.transition = 'none';
         });
     }
     

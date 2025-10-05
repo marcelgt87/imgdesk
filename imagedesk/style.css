@@ -130,7 +130,7 @@ body {
 
 .image-item {
     position: absolute;
-    cursor: move;
+    cursor: grab;
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
@@ -139,9 +139,19 @@ body {
     padding: 8px;
 }
 
+.image-item:active {
+    cursor: grabbing;
+}
+
 .image-item:hover {
     transform: scale(1.05);
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+    cursor: grab;
+}
+
+.image-item:hover:active {
+    cursor: grabbing;
+    transform: scale(1.02);
 }
 
 .image-item.selected {
@@ -172,6 +182,8 @@ body {
 .image-item.dragging {
     transform: scale(1.1);
     box-shadow: 0 15px 50px rgba(0, 0, 0, 0.3);
+    cursor: grabbing;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
 
 .image-item img {
@@ -348,11 +360,21 @@ body {
     }
 }
 
-/* Improved hover states */
+/* Improved hover states and drag feedback */
 .image-item {
     transition: all 0.2s ease, z-index 0s;
 }
 
 .image-item:hover {
     transition: all 0.2s ease, z-index 0s;
+}
+
+/* Smooth drag transition when starting */
+.image-item:active:not(.dragging) {
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+/* Disable pointer events on images during dragging to prevent conflicts */
+.image-item.dragging img {
+    pointer-events: none;
 }
