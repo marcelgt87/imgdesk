@@ -111,6 +111,12 @@ class ImageDesk {
                     imageItem.style.top = y + 'px';
                     imageItem.style.zIndex = this.nextZIndex++;
                     
+                    // Create filename tooltip
+                    const filenameTooltip = document.createElement('div');
+                    filenameTooltip.className = 'filename-tooltip';
+                    filenameTooltip.textContent = file.name;
+                    imageItem.appendChild(filenameTooltip);
+                    
                     // Store image data
                     imageItem.imageData = {
                         file: file,
@@ -541,8 +547,14 @@ class ImageDesk {
         this.closeBtn.innerHTML = '✕';
         this.closeBtn.addEventListener('click', () => this.hideFullscreen());
         
+        // Create filename display
+        this.filenameDisplay = document.createElement('div');
+        this.filenameDisplay.className = 'filename-display';
+        this.filenameDisplay.textContent = '';
+        
         this.overlay.appendChild(this.overlayImg);
         this.overlay.appendChild(this.closeBtn);
+        this.overlay.appendChild(this.filenameDisplay);
         document.body.appendChild(this.overlay);
         
         // Close on overlay click (but not on image click)
@@ -564,6 +576,11 @@ class ImageDesk {
         const img = imageItem.querySelector('img');
         this.overlayImg.src = img.src;
         this.overlayImg.alt = img.alt;
+        
+        // Display the original filename
+        const filename = imageItem.imageData.file.name;
+        this.filenameDisplay.textContent = filename;
+        
         this.overlay.style.display = 'flex';
         document.body.style.overflow = 'hidden'; // Prevent background scrolling
     }
