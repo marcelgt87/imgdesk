@@ -719,9 +719,6 @@ body {
 /* Cluster representative indicator */
 .cluster-representative {
     position: relative;
-    outline: 3px solid #4f46e5;
-    outline-offset: 2px;
-    box-shadow: 0 0 0 6px rgba(79, 70, 229, 0.2);
     width: auto !important;
     height: auto !important;
 }
