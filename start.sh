@@ -1,57 +1,68 @@
 #!/bin/bash
 
 # Image Desk - Launch Script
-# This script opens the Image Desk web application in your default browser
+# This script starts the Image Desk web server and opens it in your browser
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Path to the HTML file
+# Path to the Python server
+SERVER_FILE="$SCRIPT_DIR/server.py"
 HTML_FILE="$SCRIPT_DIR/imagedesk/index.html"
 
-# Check if the HTML file exists
+# Check if the required files exist
+if [ ! -f "$SERVER_FILE" ]; then
+    echo "❌ Error: server.py not found at $SERVER_FILE"
+    echo "Make sure the server.py file exists in the project directory"
+    exit 1
+fi
+
 if [ ! -f "$HTML_FILE" ]; then
-    echo "Error: index.html not found at $HTML_FILE"
+    echo "❌ Error: index.html not found at $HTML_FILE"
     echo "Make sure the imagedesk directory exists with the web files"
     exit 1
 fi
 
-echo "🚀 Starting Image Desk..."
-echo "📁 Opening: $HTML_FILE"
-
-# Try different methods to open the browser depending on the system
-if command -v xdg-open > /dev/null; then
-    # Linux with xdg-open (most common)
-    xdg-open "file://$HTML_FILE"
-elif command -v gnome-open > /dev/null; then
-    # GNOME desktop
-    gnome-open "file://$HTML_FILE"
-elif command -v kde-open > /dev/null; then
-    # KDE desktop
-    kde-open "file://$HTML_FILE"
-elif command -v firefox > /dev/null; then
-    # Fallback to Firefox if available
-    firefox "file://$HTML_FILE"
-elif command -v google-chrome > /dev/null; then
-    # Fallback to Chrome if available
-    google-chrome "file://$HTML_FILE"
-elif command -v chromium > /dev/null; then
-    # Fallback to Chromium if available
-    chromium "file://$HTML_FILE"
-else
-    echo "❌ Could not find a suitable browser to open the application."
-    echo "Please open the following file manually in your browser:"
-    echo "file://$HTML_FILE"
+# Check if Python 3 is available
+if ! command -v python3 > /dev/null; then
+    echo "❌ Error: Python 3 is not installed or not in PATH"
+    echo "Please install Python 3 to run Image Desk"
+    echo ""
+    echo "On Ubuntu/Debian: sudo apt update && sudo apt install python3"
+    echo "On CentOS/RHEL: sudo yum install python3"
+    echo "On Fedora: sudo dnf install python3"
     exit 1
 fi
 
-echo "✅ Image Desk should now be opening in your default browser!"
+echo "🚀 Starting Image Desk Web Server..."
+echo "📁 Project directory: $SCRIPT_DIR"
 echo ""
-echo "🎯 How to use:"
-echo "  • Click 'Load Image Folder' to select a folder with images"
-echo "  • Right-click + drag to pan around the desk"
-echo "  • Scroll mouse wheel to zoom in/out"
-echo "  • Left-click to select and drag images"
-echo "  • Drag on empty space to select multiple images"
+
+# Change to the script directory
+cd "$SCRIPT_DIR"
+
+# Set up signal handler for clean shutdown
+cleanup() {
+    echo ""
+    echo "🛑 Shutting down Image Desk server..."
+    echo "👋 Thank you for using Image Desk!"
+    exit 0
+}
+
+# Trap Ctrl+C (SIGINT) and call cleanup function
+trap cleanup SIGINT
+
+# Start the Python server
+echo "🐍 Launching Python web server..."
+echo "🌐 Server will be available at: http://localhost:8080"
 echo ""
-echo "Enjoy organizing your images! 📸"
+echo "✨ Image Similarity Features:"
+echo "  • Images are automatically grouped by visual similarity"
+echo "  • Click an image to highlight similar ones"
+echo "  • Use Ctrl+S or 'Group Similar' button to rearrange"
+echo ""
+echo "📱 Open the URL above in your browser to access Image Desk"
+echo "🛑 Press Ctrl+C to stop the server"
+echo ""
+
+python3 server.py

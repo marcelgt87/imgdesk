@@ -6,10 +6,14 @@ class ImageDesk {
         this.folderInput = document.getElementById('folderInput');
         this.imageCount = document.getElementById('imageCount');
         this.loadingIndicator = document.getElementById('loadingIndicator');
+        this.arrangeBtn = document.getElementById('arrangeBtn');
         
         // State
         this.images = [];
         this.selectedImages = new Set();
+        this.favoriteImages = new Set();
+        this.imageHashes = new Map(); // Store perceptual hashes
+        this.similarityThreshold = 0.85; // Similarity threshold for grouping
         this.scale = 1;
         this.panX = 0;
         this.panY = 0;
@@ -19,14 +23,20 @@ class ImageDesk {
         this.dragStartPos = { x: 0, y: 0 };
         this.selectionStart = { x: 0, y: 0 };
         this.lastMousePos = { x: 0, y: 0 };
+        this.nextZIndex = 1;
+        this.baseZIndex = 1;
         
         this.initializeEventListeners();
         this.updateTransform();
+        this.createOverlay();
     }
     
     initializeEventListeners() {
         // Folder input
         this.folderInput.addEventListener('change', (e) => this.loadImages(e.target.files));
+        
+        // Arrange button
+        this.arrangeBtn.addEventListener('click', () => this.arrangeBySimilarity());
         
         // Mouse events for desk
         this.desk.addEventListener('mousedown', (e) => this.handleMouseDown(e));
@@ -39,6 +49,9 @@ class ImageDesk {
         
         // Keyboard events
         document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        
+        // Window resize handler
+        window.addEventListener('resize', () => this.handleResize());
     }
     
     async loadImages(files) {
@@ -58,6 +71,9 @@ class ImageDesk {
         try {
             await Promise.all(loadPromises);
             this.updateImageCount();
+            // Generate hashes and arrange by similarity
+            await this.generateImageHashes();
+            this.arrangeBySimilarity();
         } catch (error) {
             console.error('Error loading images:', error);
         } finally {
@@ -87,13 +103,17 @@ class ImageDesk {
                     
                     imageItem.style.left = x + 'px';
                     imageItem.style.top = y + 'px';
+                    imageItem.style.zIndex = this.nextZIndex++;
                     
                     // Store image data
                     imageItem.imageData = {
                         file: file,
                         x: x,
                         y: y,
-                        element: imageItem
+                        element: imageItem,
+                        zIndex: imageItem.style.zIndex,
+                        isFavorite: false,
+                        hash: null // Will be populated later
                     };
                     
                     this.canvas.appendChild(imageItem);
@@ -114,21 +134,49 @@ class ImageDesk {
     }
     
     addImageEventListeners(imageItem) {
+        let clickCount = 0;
+        let clickTimer = null;
+        
         imageItem.addEventListener('mousedown', (e) => {
             e.stopPropagation();
             
             if (e.button === 0) { // Left click
-                if (!e.ctrlKey && !e.metaKey) {
-                    if (!this.selectedImages.has(imageItem)) {
-                        this.clearSelection();
-                        this.selectImage(imageItem);
-                    }
-                } else {
-                    this.toggleImageSelection(imageItem);
-                }
+                // Bring image to front when clicked
+                this.bringToFront(imageItem);
                 
-                this.startDragging(e, imageItem);
+                clickCount++;
+                
+                if (clickCount === 1) {
+                    clickTimer = setTimeout(() => {
+                        // Single click logic
+                        if (!e.ctrlKey && !e.metaKey) {
+                            if (!this.selectedImages.has(imageItem)) {
+                                this.clearSelection();
+                                this.selectImage(imageItem);
+                                // Highlight similar images
+                                this.highlightSimilarImages(imageItem);
+                            }
+                        } else {
+                            this.toggleImageSelection(imageItem);
+                        }
+                        
+                        this.startDragging(e, imageItem);
+                        clickCount = 0;
+                    }, 250);
+                } else if (clickCount === 2) {
+                    // Double click logic
+                    clearTimeout(clickTimer);
+                    this.showFullscreen(imageItem);
+                    clickCount = 0;
+                }
             }
+        });
+        
+        // Right click for favorites
+        imageItem.addEventListener('contextmenu', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            this.toggleFavorite(imageItem);
         });
     }
     
@@ -206,6 +254,9 @@ class ImageDesk {
         } else if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
             this.selectAllImages();
+        } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            this.arrangeBySimilarity();
         }
     }
     
@@ -213,8 +264,11 @@ class ImageDesk {
         this.isDragging = true;
         this.dragStartPos = { x: e.clientX, y: e.clientY };
         
+        // Bring all selected images to front when dragging starts
         this.selectedImages.forEach(img => {
             img.classList.add('dragging');
+            img.style.zIndex = this.nextZIndex++;
+            img.imageData.zIndex = img.style.zIndex;
         });
     }
     
@@ -309,6 +363,8 @@ class ImageDesk {
             imageItem.classList.remove('selected');
         });
         this.selectedImages.clear();
+        // Clear similarity highlights
+        this.images.forEach(img => img.classList.remove('similar'));
     }
     
     selectAllImages() {
@@ -344,6 +400,7 @@ class ImageDesk {
     
     updateImageCount() {
         this.imageCount.textContent = `${this.images.length} images loaded`;
+        this.arrangeBtn.disabled = this.images.length === 0;
     }
     
     showLoading() {
@@ -352,6 +409,313 @@ class ImageDesk {
     
     hideLoading() {
         this.loadingIndicator.style.display = 'none';
+    }
+    
+    // New methods for enhanced features
+    
+    bringToFront(imageItem) {
+        // Maintain z-index order, bring selected image to front
+        imageItem.style.zIndex = this.nextZIndex++;
+        imageItem.imageData.zIndex = imageItem.style.zIndex;
+    }
+    
+    toggleFavorite(imageItem) {
+        const isFavorite = this.favoriteImages.has(imageItem);
+        
+        if (isFavorite) {
+            this.favoriteImages.delete(imageItem);
+            imageItem.classList.remove('favorite');
+            imageItem.imageData.isFavorite = false;
+        } else {
+            this.favoriteImages.add(imageItem);
+            imageItem.classList.add('favorite');
+            imageItem.imageData.isFavorite = true;
+        }
+    }
+    
+    createOverlay() {
+        // Create fullscreen overlay
+        this.overlay = document.createElement('div');
+        this.overlay.className = 'fullscreen-overlay';
+        this.overlay.style.display = 'none';
+        
+        this.overlayImg = document.createElement('img');
+        this.overlayImg.className = 'fullscreen-image';
+        
+        this.closeBtn = document.createElement('button');
+        this.closeBtn.className = 'close-btn';
+        this.closeBtn.innerHTML = '✕';
+        this.closeBtn.addEventListener('click', () => this.hideFullscreen());
+        
+        this.overlay.appendChild(this.overlayImg);
+        this.overlay.appendChild(this.closeBtn);
+        document.body.appendChild(this.overlay);
+        
+        // Close on overlay click (but not on image click)
+        this.overlay.addEventListener('click', (e) => {
+            if (e.target === this.overlay) {
+                this.hideFullscreen();
+            }
+        });
+        
+        // Close on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.overlay.style.display !== 'none') {
+                this.hideFullscreen();
+            }
+        });
+    }
+    
+    showFullscreen(imageItem) {
+        const img = imageItem.querySelector('img');
+        this.overlayImg.src = img.src;
+        this.overlayImg.alt = img.alt;
+        this.overlay.style.display = 'flex';
+        document.body.style.overflow = 'hidden'; // Prevent background scrolling
+    }
+    
+    hideFullscreen() {
+        this.overlay.style.display = 'none';
+        document.body.style.overflow = 'auto'; // Restore scrolling
+    }
+    
+    handleResize() {
+        // Handle window resize - adjust canvas if needed
+        // The transform already handles most responsive behavior
+        // This is where you could add logic to reposition images if they go off-screen
+        this.updateTransform();
+    }
+    
+    // Perceptual Hashing and Similarity Methods
+    
+    async generateImageHashes() {
+        const hashPromises = this.images.map(async (imageItem) => {
+            const img = imageItem.querySelector('img');
+            const hash = await this.calculatePerceptualHash(img);
+            imageItem.imageData.hash = hash;
+            this.imageHashes.set(imageItem, hash);
+        });
+        
+        await Promise.all(hashPromises);
+    }
+    
+    calculatePerceptualHash(img) {
+        return new Promise((resolve) => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Resize to 8x8 for pHash
+            canvas.width = 8;
+            canvas.height = 8;
+            
+            // Draw image scaled down
+            ctx.drawImage(img, 0, 0, 8, 8);
+            const imageData = ctx.getImageData(0, 0, 8, 8);
+            
+            // Convert to grayscale and calculate DCT-like hash
+            const grayValues = [];
+            for (let i = 0; i < imageData.data.length; i += 4) {
+                const r = imageData.data[i];
+                const g = imageData.data[i + 1];
+                const b = imageData.data[i + 2];
+                // Convert to grayscale
+                const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                grayValues.push(gray);
+            }
+            
+            // Calculate average
+            const average = grayValues.reduce((sum, val) => sum + val, 0) / grayValues.length;
+            
+            // Generate hash based on whether each pixel is above or below average
+            let hash = '';
+            for (let i = 0; i < grayValues.length; i++) {
+                hash += grayValues[i] > average ? '1' : '0';
+            }
+            
+            resolve(hash);
+        });
+    }
+    
+    calculateHammingDistance(hash1, hash2) {
+        if (hash1.length !== hash2.length) return Infinity;
+        
+        let distance = 0;
+        for (let i = 0; i < hash1.length; i++) {
+            if (hash1[i] !== hash2[i]) {
+                distance++;
+            }
+        }
+        return distance;
+    }
+    
+    calculateSimilarity(imageItem1, imageItem2) {
+        const hash1 = imageItem1.imageData.hash;
+        const hash2 = imageItem2.imageData.hash;
+        
+        if (!hash1 || !hash2) return 0;
+        
+        const hammingDistance = this.calculateHammingDistance(hash1, hash2);
+        const maxDistance = hash1.length; // 64 for 8x8 hash
+        
+        // Convert to similarity score (0-1, where 1 is identical)
+        return 1 - (hammingDistance / maxDistance);
+    }
+    
+    findSimilarImages(targetImage, threshold = null) {
+        const similarityThreshold = threshold || this.similarityThreshold;
+        const similarImages = [];
+        
+        this.images.forEach(imageItem => {
+            if (imageItem === targetImage) return;
+            
+            const similarity = this.calculateSimilarity(targetImage, imageItem);
+            if (similarity >= similarityThreshold) {
+                similarImages.push({
+                    image: imageItem,
+                    similarity: similarity
+                });
+            }
+        });
+        
+        // Sort by similarity (highest first)
+        return similarImages.sort((a, b) => b.similarity - a.similarity);
+    }
+    
+    arrangeBySimilarity() {
+        if (this.images.length === 0) return;
+        
+        // Group similar images
+        const groups = [];
+        const processed = new Set();
+        
+        this.images.forEach(imageItem => {
+            if (processed.has(imageItem)) return;
+            
+            const group = [imageItem];
+            processed.add(imageItem);
+            
+            // Find similar images for this group
+            const similarImages = this.findSimilarImages(imageItem, 0.7); // Lower threshold for grouping
+            similarImages.forEach(({ image, similarity }) => {
+                if (!processed.has(image)) {
+                    group.push(image);
+                    processed.add(image);
+                }
+            });
+            
+            groups.push(group);
+        });
+        
+        // Arrange groups in a grid pattern
+        this.arrangeGroupsOnDesk(groups);
+    }
+    
+    arrangeGroupsOnDesk(groups) {
+        const groupSpacing = 300; // Space between groups
+        const imageSpacing = 120; // Space between images in a group
+        const startX = 100;
+        const startY = 100;
+        
+        let currentGroupX = startX;
+        let currentGroupY = startY;
+        const maxGroupsPerRow = Math.max(1, Math.floor(Math.sqrt(groups.length)));
+        
+        groups.forEach((group, groupIndex) => {
+            // Arrange images within the group in a small cluster
+            const groupCenterX = currentGroupX;
+            const groupCenterY = currentGroupY;
+            
+            group.forEach((imageItem, imageIndex) => {
+                let x, y;
+                
+                if (group.length === 1) {
+                    // Single image, place at center
+                    x = groupCenterX;
+                    y = groupCenterY;
+                } else {
+                    // Multiple images, arrange in a small spiral around the center
+                    const angle = (imageIndex / group.length) * 2 * Math.PI;
+                    const radius = Math.min(50 + imageIndex * 20, 100);
+                    x = groupCenterX + Math.cos(angle) * radius;
+                    y = groupCenterY + Math.sin(angle) * radius;
+                }
+                
+                // Update image position with smooth animation
+                this.animateImageToPosition(imageItem, x, y);
+            });
+            
+            // Move to next group position
+            if ((groupIndex + 1) % maxGroupsPerRow === 0) {
+                currentGroupX = startX;
+                currentGroupY += groupSpacing;
+            } else {
+                currentGroupX += groupSpacing;
+            }
+        });
+    }
+    
+    animateImageToPosition(imageItem, targetX, targetY) {
+        const currentX = imageItem.imageData.x;
+        const currentY = imageItem.imageData.y;
+        const duration = 1000; // 1 second animation
+        const startTime = performance.now();
+        
+        const animate = (currentTime) => {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Easing function (ease-out)
+            const easeOut = 1 - Math.pow(1 - progress, 3);
+            
+            const newX = currentX + (targetX - currentX) * easeOut;
+            const newY = currentY + (targetY - currentY) * easeOut;
+            
+            imageItem.imageData.x = newX;
+            imageItem.imageData.y = newY;
+            imageItem.style.left = newX + 'px';
+            imageItem.style.top = newY + 'px';
+            
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            }
+        };
+        
+        requestAnimationFrame(animate);
+    }
+    
+    // Method to manually trigger similarity arrangement
+    groupSimilarImages() {
+        this.arrangeBySimilarity();
+    }
+    
+    // Method to find duplicates (very high similarity)
+    findDuplicates(threshold = 0.95) {
+        const duplicates = [];
+        const processed = new Set();
+        
+        this.images.forEach(imageItem => {
+            if (processed.has(imageItem)) return;
+            
+            const similarImages = this.findSimilarImages(imageItem, threshold);
+            if (similarImages.length > 0) {
+                const duplicateGroup = [imageItem, ...similarImages.map(s => s.image)];
+                duplicates.push(duplicateGroup);
+                duplicateGroup.forEach(img => processed.add(img));
+            }
+        });
+        
+        return duplicates;
+    }
+    
+    // Method to highlight similar images when one is selected
+    highlightSimilarImages(targetImage) {
+        // Clear previous highlights
+        this.images.forEach(img => img.classList.remove('similar'));
+        
+        const similarImages = this.findSimilarImages(targetImage, 0.6);
+        similarImages.forEach(({ image }) => {
+            image.classList.add('similar');
+        });
     }
 }
 

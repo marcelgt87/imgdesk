@@ -107,19 +107,7 @@ class ImageDeskServer:
         print("🛑 Press Ctrl+C to stop the server")
         print("=" * 50)
         
-        # Open browser after a short delay
-        def open_browser():
-            time.sleep(1)
-            try:
-                webbrowser.open(url)
-                print(f"🌍 Opening {url} in your default browser...")
-            except Exception as e:
-                print(f"⚠️  Could not auto-open browser: {e}")
-                print(f"📱 Please open {url} manually in your browser")
-        
-        browser_thread = threading.Thread(target=open_browser)
-        browser_thread.daemon = True
-        browser_thread.start()
+        # Note: Browser auto-open disabled - access manually at the URL above
         
         # Start serving
         try:
