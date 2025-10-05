@@ -7,11 +7,12 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Path to the HTML file
-HTML_FILE="$SCRIPT_DIR/index.html"
+HTML_FILE="$SCRIPT_DIR/imagedesk/index.html"
 
 # Check if the HTML file exists
 if [ ! -f "$HTML_FILE" ]; then
-    echo "Error: index.html not found in $SCRIPT_DIR"
+    echo "Error: index.html not found at $HTML_FILE"
+    echo "Make sure the imagedesk directory exists with the web files"
     exit 1
 fi
 

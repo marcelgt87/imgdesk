@@ -31,7 +31,14 @@ class ImageDeskServer:
         """Start the HTTP server"""
         # Change to the directory containing the web files
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        os.chdir(script_dir)
+        web_files_dir = os.path.join(script_dir, 'imagedesk')
+        
+        # Check if the web files directory exists
+        if not os.path.exists(web_files_dir):
+            print(f"❌ Web files directory not found: {web_files_dir}")
+            return False
+            
+        os.chdir(web_files_dir)
         
         # Find an available port
         available_port = self.find_available_port(self.port)
