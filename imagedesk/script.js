@@ -7,13 +7,16 @@ class ImageDesk {
         this.imageCount = document.getElementById('imageCount');
         this.loadingIndicator = document.getElementById('loadingIndicator');
         this.arrangeBtn = document.getElementById('arrangeBtn');
+        this.thresholdSlider = document.getElementById('thresholdSlider');
+        this.thresholdValue = document.getElementById('thresholdValue');
         
         // State
         this.images = [];
         this.selectedImages = new Set();
         this.favoriteImages = new Set();
         this.imageHashes = new Map(); // Store perceptual hashes
-        this.similarityThreshold = 0.85; // Similarity threshold for grouping
+        this.similarityThreshold = 0.75; // Similarity threshold for highlighting
+        this.groupingThreshold = 0.65; // Lower threshold for grouping (more permissive)
         this.scale = 1;
         this.panX = 0;
         this.panY = 0;
@@ -39,6 +42,13 @@ class ImageDesk {
         
         // Arrange button
         this.arrangeBtn.addEventListener('click', () => this.arrangeBySimilarity());
+        
+        // Threshold slider
+        this.thresholdSlider.addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            this.groupingThreshold = value;
+            this.thresholdValue.textContent = value.toFixed(2);
+        });
         
         // Mouse events for desk
         this.desk.addEventListener('mousedown', (e) => this.handleMouseDown(e));
@@ -615,36 +625,74 @@ class ImageDesk {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             
-            // Resize to 8x8 for pHash
-            canvas.width = 8;
-            canvas.height = 8;
+            // Use larger canvas for better accuracy
+            canvas.width = 16;
+            canvas.height = 16;
             
-            // Draw image scaled down
-            ctx.drawImage(img, 0, 0, 8, 8);
-            const imageData = ctx.getImageData(0, 0, 8, 8);
+            // Draw image scaled down with better quality
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, 16, 16);
+            const imageData = ctx.getImageData(0, 0, 16, 16);
             
-            // Convert to grayscale and calculate DCT-like hash
+            // Convert to grayscale with better color weighting
             const grayValues = [];
             for (let i = 0; i < imageData.data.length; i += 4) {
                 const r = imageData.data[i];
                 const g = imageData.data[i + 1];
                 const b = imageData.data[i + 2];
-                // Convert to grayscale
-                const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                // Use more accurate luminance formula
+                const gray = Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b);
                 grayValues.push(gray);
             }
             
-            // Calculate average
-            const average = grayValues.reduce((sum, val) => sum + val, 0) / grayValues.length;
+            // Apply simple DCT-like transformation for better similarity detection
+            const dctValues = this.applyDCT(grayValues, 16, 16);
             
-            // Generate hash based on whether each pixel is above or below average
+            // Use the low-frequency components (top-left 8x8)
+            const lowFreq = [];
+            for (let y = 0; y < 8; y++) {
+                for (let x = 0; x < 8; x++) {
+                    lowFreq.push(dctValues[y * 16 + x]);
+                }
+            }
+            
+            // Calculate median instead of average for better threshold
+            const sortedValues = [...lowFreq].sort((a, b) => a - b);
+            const median = sortedValues[Math.floor(sortedValues.length / 2)];
+            
+            // Generate hash based on whether each value is above or below median
             let hash = '';
-            for (let i = 0; i < grayValues.length; i++) {
-                hash += grayValues[i] > average ? '1' : '0';
+            for (let i = 0; i < lowFreq.length; i++) {
+                hash += lowFreq[i] > median ? '1' : '0';
             }
             
             resolve(hash);
         });
+    }
+    
+    // Simple DCT approximation for better perceptual hashing
+    applyDCT(values, width, height) {
+        const result = new Array(values.length);
+        
+        for (let v = 0; v < height; v++) {
+            for (let u = 0; u < width; u++) {
+                let sum = 0;
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        const cosU = Math.cos(((2 * x + 1) * u * Math.PI) / (2 * width));
+                        const cosV = Math.cos(((2 * y + 1) * v * Math.PI) / (2 * height));
+                        sum += values[y * width + x] * cosU * cosV;
+                    }
+                }
+                
+                const cu = u === 0 ? 1 / Math.sqrt(2) : 1;
+                const cv = v === 0 ? 1 / Math.sqrt(2) : 1;
+                result[v * width + u] = (cu * cv * sum) / 4;
+            }
+        }
+        
+        return result;
     }
     
     calculateHammingDistance(hash1, hash2) {
@@ -665,11 +713,79 @@ class ImageDesk {
         
         if (!hash1 || !hash2) return 0;
         
+        // Calculate perceptual hash similarity
         const hammingDistance = this.calculateHammingDistance(hash1, hash2);
-        const maxDistance = hash1.length; // 64 for 8x8 hash
+        const maxDistance = hash1.length; // 64 for current hash size
+        const hashSimilarity = 1 - (hammingDistance / maxDistance);
         
-        // Convert to similarity score (0-1, where 1 is identical)
-        return 1 - (hammingDistance / maxDistance);
+        // Add filename similarity as a secondary metric
+        const filenameSimilarity = this.calculateFilenameSimilarity(
+            imageItem1.imageData.file.name,
+            imageItem2.imageData.file.name
+        );
+        
+        // Combine both metrics with perceptual hash being primary
+        const combinedSimilarity = hashSimilarity * 0.85 + filenameSimilarity * 0.15;
+        
+        return combinedSimilarity;
+    }
+    
+    calculateFilenameSimilarity(name1, name2) {
+        // Remove extensions and normalize
+        const normalize = (name) => {
+            return name.toLowerCase()
+                .replace(/\.[^/.]+$/, '') // Remove extension
+                .replace(/[_\-\s]+/g, ' ') // Replace separators with spaces
+                .trim();
+        };
+        
+        const norm1 = normalize(name1);
+        const norm2 = normalize(name2);
+        
+        // Check for common patterns (IMG_, DSC_, etc.)
+        const commonPrefixes = /^(img|dsc|p|photo|image|pic)[\s_\-]*\d+/i;
+        const prefix1 = norm1.match(commonPrefixes);
+        const prefix2 = norm2.match(commonPrefixes);
+        
+        if (prefix1 && prefix2) {
+            // Both have similar prefixes, check if they're sequential
+            const num1 = parseInt(norm1.replace(/\D/g, ''));
+            const num2 = parseInt(norm2.replace(/\D/g, ''));
+            if (!isNaN(num1) && !isNaN(num2)) {
+                const diff = Math.abs(num1 - num2);
+                if (diff <= 5) return 0.8; // Sequential images likely similar
+                if (diff <= 20) return 0.4;
+            }
+        }
+        
+        // Calculate simple string similarity
+        const longer = norm1.length > norm2.length ? norm1 : norm2;
+        const shorter = norm1.length > norm2.length ? norm2 : norm1;
+        
+        if (longer.length === 0) return 1.0;
+        
+        const distance = this.levenshteinDistance(longer, shorter);
+        return (longer.length - distance) / longer.length * 0.3; // Lower weight for string similarity
+    }
+    
+    levenshteinDistance(str1, str2) {
+        const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+        
+        for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+        for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+        
+        for (let j = 1; j <= str2.length; j++) {
+            for (let i = 1; i <= str1.length; i++) {
+                const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+                matrix[j][i] = Math.min(
+                    matrix[j][i - 1] + 1,
+                    matrix[j - 1][i] + 1,
+                    matrix[j - 1][i - 1] + indicator
+                );
+            }
+        }
+        
+        return matrix[str2.length][str1.length];
     }
     
     findSimilarImages(targetImage, threshold = null) {
@@ -695,30 +811,87 @@ class ImageDesk {
     arrangeBySimilarity() {
         if (this.images.length === 0) return;
         
-        // Group similar images
-        const groups = [];
-        const processed = new Set();
+        // Create similarity matrix for better clustering
+        const similarityMatrix = this.createSimilarityMatrix();
         
-        this.images.forEach(imageItem => {
-            if (processed.has(imageItem)) return;
-            
-            const group = [imageItem];
-            processed.add(imageItem);
-            
-            // Find similar images for this group
-            const similarImages = this.findSimilarImages(imageItem, 0.7); // Lower threshold for grouping
-            similarImages.forEach(({ image, similarity }) => {
-                if (!processed.has(image)) {
-                    group.push(image);
-                    processed.add(image);
-                }
-            });
-            
-            groups.push(group);
+        // Use improved clustering algorithm
+        const groups = this.clusterImages(similarityMatrix, this.groupingThreshold);
+        
+        // Sort groups by size (largest first) and average similarity
+        groups.sort((a, b) => {
+            if (a.length !== b.length) return b.length - a.length;
+            return b.avgSimilarity - a.avgSimilarity;
         });
+        
+        console.log(`Grouped ${this.images.length} images into ${groups.length} groups:`, 
+                   groups.map(g => `${g.length} images (avg similarity: ${g.avgSimilarity?.toFixed(2)})`));
         
         // Arrange groups in a grid pattern
         this.arrangeGroupsOnDesk(groups);
+    }
+    
+    createSimilarityMatrix() {
+        const matrix = [];
+        for (let i = 0; i < this.images.length; i++) {
+            matrix[i] = [];
+            for (let j = 0; j < this.images.length; j++) {
+                if (i === j) {
+                    matrix[i][j] = 1.0;
+                } else if (i < j) {
+                    const similarity = this.calculateSimilarity(this.images[i], this.images[j]);
+                    matrix[i][j] = similarity;
+                    matrix[j] = matrix[j] || [];
+                    matrix[j][i] = similarity;
+                } else if (!matrix[i][j]) {
+                    matrix[i][j] = matrix[j][i];
+                }
+            }
+        }
+        return matrix;
+    }
+    
+    clusterImages(similarityMatrix, threshold) {
+        const groups = [];
+        const processed = new Set();
+        
+        for (let i = 0; i < this.images.length; i++) {
+            if (processed.has(i)) continue;
+            
+            const group = { images: [this.images[i]], indices: [i], similarities: [] };
+            processed.add(i);
+            
+            // Find all similar images using recursive clustering
+            const queue = [i];
+            
+            while (queue.length > 0) {
+                const currentIndex = queue.shift();
+                
+                for (let j = 0; j < this.images.length; j++) {
+                    if (processed.has(j)) continue;
+                    
+                    const similarity = similarityMatrix[currentIndex][j];
+                    if (similarity >= threshold) {
+                        group.images.push(this.images[j]);
+                        group.indices.push(j);
+                        group.similarities.push(similarity);
+                        processed.add(j);
+                        queue.push(j);
+                    }
+                }
+            }
+            
+            // Calculate average similarity for the group
+            if (group.similarities.length > 0) {
+                group.avgSimilarity = group.similarities.reduce((a, b) => a + b, 0) / group.similarities.length;
+            } else {
+                group.avgSimilarity = 1.0; // Single image group
+            }
+            
+            groups.push(group.images);
+            groups[groups.length - 1].avgSimilarity = group.avgSimilarity;
+        }
+        
+        return groups;
     }
     
     arrangeGroupsOnDesk(groups) {
@@ -823,10 +996,13 @@ class ImageDesk {
         // Clear previous highlights
         this.images.forEach(img => img.classList.remove('similar'));
         
-        const similarImages = this.findSimilarImages(targetImage, 0.6);
+        const similarImages = this.findSimilarImages(targetImage, this.similarityThreshold);
         similarImages.forEach(({ image }) => {
             image.classList.add('similar');
         });
+        
+        console.log(`Found ${similarImages.length} similar images for ${targetImage.imageData.file.name}:`,
+                   similarImages.map(s => `${s.image.imageData.file.name} (${s.similarity.toFixed(2)})`));
     }
 }
 
