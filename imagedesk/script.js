@@ -7,6 +7,7 @@ class ImageDesk {
         this.imageCount = document.getElementById('imageCount');
         this.loadingIndicator = document.getElementById('loadingIndicator');
         this.arrangeBtn = document.getElementById('arrangeBtn');
+        this.clearBtn = document.getElementById('clearBtn');
         this.thresholdSlider = document.getElementById('thresholdSlider');
         this.thresholdValue = document.getElementById('thresholdValue');
         
@@ -42,6 +43,9 @@ class ImageDesk {
         
         // Arrange button
         this.arrangeBtn.addEventListener('click', () => this.arrangeBySimilarity());
+        
+        // Clear button
+        this.clearBtn.addEventListener('click', () => this.clearAllImages());
         
         // Threshold slider
         this.thresholdSlider.addEventListener('input', (e) => {
@@ -392,6 +396,9 @@ class ImageDesk {
         } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
             this.arrangeBySimilarity();
+        } else if (e.key === 'r' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            this.clearAllImages();
         }
     }
     
@@ -564,7 +571,35 @@ class ImageDesk {
         });
         this.images = [];
         this.selectedImages.clear();
+        this.favoriteImages.clear();
+        this.imageHashes.clear();
         this.updateImageCount();
+    }
+    
+    clearAllImages() {
+        if (this.images.length === 0) {
+            return; // Nothing to clear
+        }
+        
+        // Show confirmation dialog
+        const confirmed = confirm(
+            `Are you sure you want to clear all ${this.images.length} images? This action cannot be undone.`
+        );
+        
+        if (confirmed) {
+            this.clearImages();
+            
+            // Reset canvas position and zoom
+            this.scale = 1;
+            this.panX = 0;
+            this.panY = 0;
+            this.updateTransform();
+            
+            // Reset z-index counter
+            this.nextZIndex = 1;
+            
+            console.log('Canvas cleared successfully');
+        }
     }
     
     updateTransform() {
@@ -575,6 +610,7 @@ class ImageDesk {
     updateImageCount() {
         this.imageCount.textContent = `${this.images.length} images loaded`;
         this.arrangeBtn.disabled = this.images.length === 0;
+        this.clearBtn.disabled = this.images.length === 0;
     }
     
     showLoading() {

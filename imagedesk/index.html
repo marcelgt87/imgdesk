@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html lang="en">
+<html la                <span class="instructions">
+                    🔄 Scroll to zoom | 🖱️ Shift+Scroll to pan | 🖱️ Left-click to select & drag | 🖱️ Double-click for fullscreen | 🖱️ Right-click to favorite | ⌨️ Ctrl+S to group | ⌨️ Ctrl+R to clear
+                </span>"en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,6 +15,7 @@
             <input type="file" id="folderInput" multiple accept="image/*" webkitdirectory>
             <label for="folderInput" class="folder-btn">Load Image Folder</label>
             <button id="arrangeBtn" class="arrange-btn" title="Arrange by similarity (Ctrl+S)">🔗 Group Similar</button>
+            <button id="clearBtn" class="clear-btn" title="Clear all images (Ctrl+R)">🗑️ Clear All</button>
             <div class="similarity-controls">
                 <label for="thresholdSlider" class="threshold-label">Grouping Sensitivity:</label>
                 <input type="range" id="thresholdSlider" min="0.3" max="0.9" step="0.05" value="0.65" class="threshold-slider">
