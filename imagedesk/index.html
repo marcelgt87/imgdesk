@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Desk</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>📸 Image Desk</h1>
+        <div class="controls">
+            <input type="file" id="folderInput" multiple accept="image/*" webkitdirectory>
+            <label for="folderInput" class="folder-btn">Load Image Folder</label>
+            <div class="info">
+                <span id="imageCount">0 images loaded</span>
+                <span class="separator">|</span>
+                <span class="instructions">
+                    🖱️ Right-click + drag to pan | 🔄 Scroll to zoom | 🖱️ Left-click to select & drag images
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div id="desk" class="desk">
+        <div id="canvas" class="canvas">
+            <div id="selectionBox" class="selection-box"></div>
+        </div>
+    </div>
+
+    <div id="loadingIndicator" class="loading-indicator">
+        <div class="spinner"></div>
+        <span>Loading images...</span>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
