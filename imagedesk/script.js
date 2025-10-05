@@ -227,11 +227,10 @@ class ImageDesk {
             }
         });
         
-        // Right click for favorites
+        // Right click - remove default context menu but don't handle favorites
         imageItem.addEventListener('contextmenu', (e) => {
             e.stopPropagation();
             e.preventDefault();
-            this.toggleFavorite(imageItem);
         });
     }
     
@@ -409,6 +408,13 @@ class ImageDesk {
         } else if (e.key === 'c' || e.key === 'C') {
             if (this.selectedImages.size > 1) {
                 this.showClusterModal();
+            }
+        } else if (e.key === 'f' || e.key === 'F') {
+            // Toggle favorite for all selected images
+            if (this.selectedImages.size > 0) {
+                this.selectedImages.forEach(imageItem => {
+                    this.toggleFavorite(imageItem);
+                });
             }
         }
     }
