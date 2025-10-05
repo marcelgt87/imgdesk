@@ -333,6 +333,11 @@ body {
     user-select: none;
 }
 
+/* Selection box should never block events */
+.selection-box {
+    pointer-events: none;
+}
+
 /* Fullscreen overlay styles */
 .fullscreen-overlay {
     position: fixed;

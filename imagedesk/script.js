@@ -231,16 +231,62 @@ class ImageDesk {
             this.isPanning = true;
             this.desk.classList.add('panning');
             e.preventDefault();
-        } else if (e.button === 0 && e.target === this.desk) {
-            // Left click on empty area - start selection
-            this.clearSelection();
-            this.startSelection(e);
+        } else if (e.button === 0) {
+            // Check if click is on empty area (not on an image)
+            const isOnEmptyArea = this.isClickOnEmptyArea(e);
+            
+            console.log('Mouse down - Target:', e.target.tagName, e.target.className, 'Empty area:', isOnEmptyArea);
+            
+            if (isOnEmptyArea) {
+                // Left click on empty area - start selection
+                this.clearSelection();
+                this.startSelection(e);
+            }
         }
         
         // Prevent default behavior that might interfere with dragging
         if (e.button === 0) {
             e.preventDefault();
         }
+    }
+    
+    isClickOnEmptyArea(e) {
+        const target = e.target;
+        
+        // Direct hits on background elements
+        if (target === this.desk || 
+            target === this.canvas || 
+            target === this.selectionBox) {
+            return true;
+        }
+        
+        // Check if we're clicking on an image or any of its children
+        let current = target;
+        while (current) {
+            if (current.classList && current.classList.contains('image-item')) {
+                return false; // Click is on an image
+            }
+            if (current === this.canvas || current === this.desk) {
+                break; // Reached container, stop searching
+            }
+            current = current.parentElement;
+        }
+        
+        // Additional check: if target has no specific classes and is within our canvas area
+        const targetClasses = target.classList;
+        if (!targetClasses || targetClasses.length === 0) {
+            return true; // Likely empty background
+        }
+        
+        // Check for known non-image elements
+        const allowedClasses = ['canvas', 'desk', 'selection-box'];
+        for (const className of targetClasses) {
+            if (allowedClasses.includes(className)) {
+                return true;
+            }
+        }
+        
+        return true; // Default to allowing selection (be permissive)
     }
     
     handleMouseMove(e) {
@@ -399,7 +445,9 @@ class ImageDesk {
     
     startSelection(e) {
         this.isSelecting = true;
-        const rect = this.canvas.getBoundingClientRect();
+        const rect = this.desk.getBoundingClientRect();
+        
+        // Convert screen coordinates to canvas coordinates
         this.selectionStart = {
             x: (e.clientX - rect.left - this.panX) / this.scale,
             y: (e.clientY - rect.top - this.panY) / this.scale
@@ -410,15 +458,19 @@ class ImageDesk {
     }
     
     updateSelection(e) {
-        const rect = this.canvas.getBoundingClientRect();
+        const rect = this.desk.getBoundingClientRect();
+        
+        // Convert current mouse position to canvas coordinates
         const currentX = (e.clientX - rect.left - this.panX) / this.scale;
         const currentY = (e.clientY - rect.top - this.panY) / this.scale;
         
+        // Calculate selection box bounds in canvas coordinates
         const left = Math.min(this.selectionStart.x, currentX);
         const top = Math.min(this.selectionStart.y, currentY);
         const width = Math.abs(currentX - this.selectionStart.x);
         const height = Math.abs(currentY - this.selectionStart.y);
         
+        // Apply the selection box position and size
         this.selectionBox.style.left = left + 'px';
         this.selectionBox.style.top = top + 'px';
         this.selectionBox.style.width = width + 'px';
@@ -429,28 +481,40 @@ class ImageDesk {
         this.isSelecting = false;
         this.selectionBox.style.display = 'none';
         
-        const selectionRect = this.selectionBox.getBoundingClientRect();
-        const canvasRect = this.canvas.getBoundingClientRect();
+        // Get selection bounds directly from the selection box style
+        const selectionLeft = parseFloat(this.selectionBox.style.left);
+        const selectionTop = parseFloat(this.selectionBox.style.top);
+        const selectionWidth = parseFloat(this.selectionBox.style.width);
+        const selectionHeight = parseFloat(this.selectionBox.style.height);
         
-        // Convert selection box coordinates to canvas space
-        const selectionLeft = (selectionRect.left - canvasRect.left - this.panX) / this.scale;
-        const selectionTop = (selectionRect.top - canvasRect.top - this.panY) / this.scale;
-        const selectionRight = selectionLeft + selectionRect.width / this.scale;
-        const selectionBottom = selectionTop + selectionRect.height / this.scale;
+        const selectionRight = selectionLeft + selectionWidth;
+        const selectionBottom = selectionTop + selectionHeight;
         
+        // Check each image for intersection with selection box
         this.images.forEach(imageItem => {
-            const imgRect = imageItem.getBoundingClientRect();
             const imgLeft = imageItem.imageData.x;
             const imgTop = imageItem.imageData.y;
-            const imgRight = imgLeft + imgRect.width / this.scale;
-            const imgBottom = imgTop + imgRect.height / this.scale;
             
-            // Check if image intersects with selection
+            // Get image dimensions (need to account for max-width/height CSS)
+            const img = imageItem.querySelector('img');
+            const imgRect = img.getBoundingClientRect();
+            const canvasRect = this.canvas.getBoundingClientRect();
+            
+            // Convert image size to canvas coordinates
+            const imgWidth = (imgRect.width / this.scale);
+            const imgHeight = (imgRect.height / this.scale);
+            
+            const imgRight = imgLeft + imgWidth;
+            const imgBottom = imgTop + imgHeight;
+            
+            // Check if image intersects with selection box
             if (imgLeft < selectionRight && imgRight > selectionLeft &&
                 imgTop < selectionBottom && imgBottom > selectionTop) {
                 this.selectImage(imageItem);
             }
         });
+        
+        console.log(`Selected ${this.selectedImages.size} images in selection area`);
     }
     
     selectImage(imageItem) {
