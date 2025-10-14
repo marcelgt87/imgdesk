@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ImageDesk - Native Desktop Image Manager</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>📸 ImageDesk</h1>
+        <div class="controls">
+            <button id="folderBtn" class="folder-btn">📂 Open Folder</button>
+            <button id="arrangeBtn" class="arrange-btn" title="Arrange by similarity (Ctrl+G)">🔗 Group Similar</button>
+            <button id="clearBtn" class="clear-btn" title="Clear all images (Ctrl+Shift+C)">🗑️ Clear All</button>
+            
+            <!-- File Operations -->
+            <div class="file-operations">
+                <button id="moveBtn" class="operation-btn" title="Move selected images" disabled>📁 Move</button>
+                <button id="copyBtn" class="operation-btn" title="Copy selected images" disabled>📋 Copy</button>
+                <button id="deleteBtn" class="operation-btn delete-btn" title="Delete selected images" disabled>🗑️ Delete</button>
+                <button id="newFolderBtn" class="operation-btn" title="Create new folder">📂+ New Folder</button>
+            </div>
+            
+            <div class="similarity-controls">
+                <label for="thresholdSlider" class="threshold-label">Grouping Sensitivity:</label>
+                <input type="range" id="thresholdSlider" min="0.3" max="0.9" step="0.05" value="0.65" class="threshold-slider">
+                <span id="thresholdValue" class="threshold-value">0.65</span>
+            </div>
+            
+            <div class="info">
+                <span id="imageCount">0 images loaded</span>
+                <span class="separator">|</span>
+                <span id="selectedCount">0 selected</span>
+                <span class="separator">|</span>
+                <span class="instructions">
+                    🔄 Scroll to zoom | 🖱️ Shift+Scroll to pan | 🖱️ Left-click to select & drag | 🖱️ Double-click for fullscreen | ⌨️ F to favorite | ⌨️ C to cluster
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div id="desk" class="desk">
+        <div id="canvas" class="canvas">
+            <div id="selectionBox" class="selection-box"></div>
+        </div>
+    </div>
+
+    <div id="loadingIndicator" class="loading-indicator">
+        <div class="spinner"></div>
+        <span>Loading images...</span>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="contextMenu" class="context-menu">
+        <div class="context-item" id="contextFavorite">⭐ Toggle Favorite</div>
+        <div class="context-item" id="contextShowInFolder">📁 Show in Folder</div>
+        <div class="context-separator"></div>
+        <div class="context-item" id="contextMove">📁 Move to...</div>
+        <div class="context-item" id="contextCopy">📋 Copy to...</div>
+        <div class="context-item" id="contextRename">✏️ Rename</div>
+        <div class="context-separator"></div>
+        <div class="context-item delete" id="contextDelete">🗑️ Delete</div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
